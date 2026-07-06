@@ -1,48 +1,62 @@
-# Style-Match Photo Editor Agent — Antigravity Build Package
+# Style-Match Photo Editor Agent
 
-This folder is a **spec-driven build package** for re-implementing the Style-Match Photo
-Editor Agent from scratch inside **Google Antigravity**. It contains everything an
-Antigravity agent needs to plan, build, and verify the app — the same behaviour and all
-the hardening from the reference implementation.
+An AI agent that applies the **tonal/colour style** of a reference image (or a text
+instruction) to a photo **without changing the content** — same objects, same composition,
+only the grade changes. Built for the Kaggle **5-Day AI Agents: Intensive Vibe Coding Course
+with Google** capstone.
 
-## What you're building (one paragraph)
+## Why
+Generative "style transfer" usually repaints the scene — inventing objects, redrawing skies,
+smoothing water. This agent transfers only tone/colour, then **checks its own work against the
+original and corrects itself** if any content drifted.
 
-A desktop web app (Gradio UI + a Python agent) that takes a **source photo** and either a
-**style-reference image** or a **text instruction**, then re-grades the photo to match that
-look **without changing any content**. It runs an agentic loop — perceive the target style,
-edit, self-critique against the original, refine — with a human-in-the-loop feedback step
-and full-resolution JPG/ZIP downloads.
+## What it does
+Give it a source photo plus a **style-reference image** or a **text instruction**. It runs a
+`perceive → route → edit → critique → refine` loop, lets you steer with plain-language
+feedback, and exports a full-resolution JPG (or a ZIP of every iteration).
 
-## The documents (read in this order)
+## How it works
+1. **Perceive** — a Gemini vision model turns the reference into a *tone-only* style spec (JSON).
+2. **Route** — trivial edits (plain B&W, sepia, contrast) use a fast local Pillow tool; the rest go to the image model.
+3. **Edit** — a "colorist" prompt re-grades the source with hard rules against adding, moving, or redrawing anything (Gemini image model / Nano Banana).
+4. **Critique** — a Gemini vision model compares the edit to the **original** and scores tone match *and* content preservation, capping the score if content changed.
+5. **Refine** — below threshold, it rewrites the edit prompt from the critique and retries.
 
-| File | Purpose | Antigravity role |
-|------|---------|------------------|
-| `AGENTS.md` | Always-on rules & hard invariants the agent must never break | Copy to **project root** (Antigravity auto-loads it) |
-| `SPEC.md` | Full functional + technical specification (the source of truth) | The "specify" artifact to review/approve |
-| `PROMPTS.md` | The four LLM prompts, **verbatim** — the heart of the agent | Reproduce exactly; do not paraphrase |
-| `BUILD_PLAN.md` | Ordered task list with acceptance criteria + how to drive Antigravity | The "tasks" artifact to implement against |
-| `SETUP.md` | Environment, API key, billing, model IDs, run & verify, troubleshooting | Setup + verification reference |
+A **human-in-the-loop** step then lets you type feedback that's fed back through the same refine path.
 
-## How to use this in Antigravity
+**Key design decision:** the reference image is **never sent to the image model** — the style
+reaches the editor only as text, so the model has nothing to copy content from. This is what
+stops the content leakage.
 
-1. **Create the workspace.** Make an empty project folder and open it in Antigravity
-   (Open Workspace). Copy `AGENTS.md` to the project root. Put the other four docs in a
-   `docs/` subfolder (or anywhere in the workspace — the agent can read them).
-2. **Start in Planning Mode.** Open the Agent Manager, start a conversation in this
-   workspace, pick a Gemini 3 Pro/Flash model, and choose **Planning Mode** (review the
-   plan before code is written). Review-driven autonomy is a good default for a first build.
-3. **Kick it off** with the prompt in `BUILD_PLAN.md` → "Kickoff prompt". It points the
-   agent at `SPEC.md`, `PROMPTS.md`, and the task list, and tells it to build task by task
-   and verify each with the acceptance criteria.
-4. **Verify** using `SETUP.md` → the `--selftest` and mocked-loop checks (no API calls),
-   then a real end-to-end run once billing/key are set.
+See `architecture_diagram.md` for the loop diagram.
 
-## Non-negotiables (also enforced in AGENTS.md)
+## Quickstart
+```bash
+pip install google-genai pillow gradio
+export GEMINI_API_KEY="your-key"        # Windows (cmd): set GEMINI_API_KEY=your-key
+python agent.py --selftest              # offline checks, no key needed
+python app.py                           # web UI at http://127.0.0.1:7860
+```
+Image generation requires a **billed (Tier-1)** Gemini API project — the free tier returns a
+zero quota for image models. See `docs/SETUP.md` for details and troubleshooting.
 
-- The style-reference image is **never** sent to the image-generation model (content-leak
-  prevention). Style is conveyed only as text derived from the reference.
-- The image edit is a **content-locked tonal re-grade**, not image generation.
-- The critic compares the edit against the **original** and fails any content change.
-- API keys come from the environment, never hardcoded. Gradio state is in-memory only.
-- Image generation requires a **billed (Tier-1)** Gemini API project; the free tier returns
-  a zero quota for image models. See `SETUP.md`.
+## Project structure
+```
+agent.py                 # the agent: perceive / route / edit / critique / refine loop + CLI + --selftest
+app.py                   # Gradio web UI (result, critique trace, downloads, feedback)
+AGENTS.md                # always-on rules used when (re)building in Google Antigravity
+architecture_diagram.md  # the loop diagram
+docs/                    # SPEC, PROMPTS, BUILD_PLAN, SETUP (the Antigravity build package)
+```
+
+## Tech stack
+Python · Gemini API (`google-genai`) · Pillow · Gradio. Built with vibe coding and
+re-implemented spec-first in Google Antigravity.
+
+## Course concepts demonstrated
+Tool/API integration (image + vision models + a local tool, with routing) · evaluation (the
+self-critique loop) · human-in-the-loop (feedback) · guardrails & robust error handling
+(content-preservation rules, quota/safety-block/API handling).
+
+## Notes
+No API key is stored in this repo — the key is read from the environment only.
